@@ -1,0 +1,3 @@
+[submodule "Roslynator"]
+	path = Roslynator
+	url = git@github.com:dotnet/roslynator.git

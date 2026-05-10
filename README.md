@@ -37,6 +37,25 @@ For usage examples see [EXAMPLES.md](./EXAMPLES.md).
 
 Metrics and summaries are also available via the `metrics://` and `summary://` resource schemes.
 
+## Code Quality Tools (Roslynator)
+
+Five Roslynator CLI tools are exposed as MCP tools for diagnostics, formatting, and metrics. These are one-shot operations and do not require `load-solution` first; pass the `.sln` or `.csproj` path directly.
+
+| Tool | Description |
+|------|-------------|
+| `roslynator-analyze` | Run diagnostics and report issues |
+| `roslynator-fix` | Apply auto-fixes (run `roslynator-analyze` first to preview) |
+| `roslynator-format` | Whitespace and style formatting |
+| `roslynator-spellcheck` | Spelling of identifiers and comments |
+| `roslynator-lloc` | Count logical lines of code |
+| `roslynator-loc` | Count physical lines of code |
+| `roslynator-find-symbol` | Find symbols by kind/visibility; use `unused` flag for dead code detection |
+| `roslynator-rename-symbol` | Bulk rename symbols using C# match/newName expressions; dry-run by default |
+
+The Roslynator CLI is included as a git submodule (`Roslynator/`) and is built and published into the output directory automatically when the project is built. No separate installation is required.
+
+If the local binary is not found (e.g. running without a prior build), the tools fall back to a globally installed `roslynator` tool if one is present.
+
 ## Contributing
 
 * Run `dotnet test` to ensure all tests pass.

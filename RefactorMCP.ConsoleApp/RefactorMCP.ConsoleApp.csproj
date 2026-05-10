@@ -7,6 +7,16 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <Target Name="BuildRoslynatorCli" BeforeTargets="Build">
+    <PropertyGroup>
+      <RoslynatorCliProject>$(MSBuildThisFileDirectory)..\Roslynator\src\CommandLine\CommandLine.csproj</RoslynatorCliProject>
+      <RoslynatorExeName Condition="$([MSBuild]::IsOSPlatform('Windows'))">roslynator.exe</RoslynatorExeName>
+      <RoslynatorExeName Condition="!$([MSBuild]::IsOSPlatform('Windows'))">roslynator</RoslynatorExeName>
+    </PropertyGroup>
+    <Exec Command="dotnet publish &quot;$(RoslynatorCliProject)&quot; -c $(Configuration) -o &quot;$(OutputPath)roslynator&quot; --nologo -v quiet"
+          Condition="!Exists('$(OutputPath)roslynator\$(RoslynatorExeName)')" />
+  </Target>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.14.0" />

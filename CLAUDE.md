@@ -25,6 +25,7 @@ RefactorMCP is a Model Context Protocol server that exposes Roslyn-based refacto
 - Roslyn (Microsoft.CodeAnalysis) for C# code analysis and transformation
 - xUnit for testing
 - Model Context Protocol for server functionality
+- Roslynator CLI (git submodule at `Roslynator/`, built automatically into output on first build)
 
 ## Development Commands
 

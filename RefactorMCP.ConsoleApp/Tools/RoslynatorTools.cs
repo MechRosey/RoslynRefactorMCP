@@ -36,20 +36,77 @@ internal static class RoslynatorTools
         [Description("Absolute path to .sln or .csproj.")] string solution)
         => RunRoslynatorAsync(["lloc", solution]);
 
+    [McpServerTool(Name = "roslynator-loc")]
+    [Description("Count physical lines of code in a solution or project via Roslynator.")]
+    public static Task<string> Loc(
+        [Description("Absolute path to .sln or .csproj.")] string solution)
+        => RunRoslynatorAsync(["loc", solution]);
+
+    [McpServerTool(Name = "roslynator-rename-symbol")]
+    [Description("Rename symbols across a solution or project using Roslynator. " +
+                 "match is a C# expression body for 'bool M(ISymbol symbol)' selecting which symbols to rename. " +
+                 "newName is a C# expression body for 'string M(ISymbol symbol)' returning the new name. " +
+                 "Runs as dry-run by default; set dryRun to false to apply changes.")]
+    public static Task<string> RenameSymbol(
+        [Description("Absolute path to .sln or .csproj.")] string solution,
+        [Description("C# expression selecting symbols to rename, e.g. symbol.Name.StartsWith(\"_\")")] string match,
+        [Description("C# expression returning the new name, e.g. symbol.Name.TrimStart('_')")] string newName,
+        [Description("Preview only without writing changes. Defaults to true.")] bool dryRun = true)
+    {
+        List<string> args = ["rename-symbol", solution, "--match", match, "--new-name", newName];
+        if (dryRun) args.Add("--dry-run");
+        return RunRoslynatorAsync(args);
+    }
+
+    [McpServerTool(Name = "roslynator-find-symbol")]
+    [Description("Find symbols in a solution or project via Roslynator. " +
+                 "Use unused to locate dead code. " +
+                 "symbolKind filters by kind: class, delegate, enum, interface, struct, event, field, enum-field, const, method, property, indexer, member, type. " +
+                 "visibility filters by accessibility: public, internal, private.")]
+    public static Task<string> FindSymbol(
+        [Description("Absolute path to .sln or .csproj.")] string solution,
+        [Description("Find only symbols with zero references.")] bool unused = false,
+        [Description("Space-separated symbol kinds to include, e.g. \"method field\".")] string? symbolKind = null,
+        [Description("Space-separated visibility levels to include, e.g. \"public internal\".")] string? visibility = null)
+    {
+        List<string> args = ["find-symbol", solution];
+        if (unused) args.Add("--unused");
+        if (!string.IsNullOrEmpty(symbolKind)) { args.Add("--symbol-kind"); args.Add(symbolKind); }
+        if (!string.IsNullOrEmpty(visibility)) { args.Add("--visibility"); args.Add(visibility); }
+        return RunRoslynatorAsync(args);
+    }
+
+    private static string GetRoslynatorExe()
+    {
+        string? exeDir = Path.GetDirectoryName(Environment.ProcessPath);
+        if (exeDir != null)
+        {
+            string name = OperatingSystem.IsWindows() ? "roslynator.exe" : "roslynator";
+            string local = Path.Combine(exeDir, "roslynator", name);
+            if (File.Exists(local))
+                return local;
+        }
+        return "roslynator";
+    }
+
     private static async Task<string> RunRoslynatorAsync(IEnumerable<string> args)
     {
+        string exe = GetRoslynatorExe();
         List<string> allArgs = new List<string>(args);
 
-        // Roslynator 0.12.0 is incompatible with .NET 10+ MSBuild (MSBuildConstants.InvalidPathChars removed).
-        // Inject --msbuild-path pointing at the highest compatible SDK (major version below 10).
-        string? sdkPath = FindCompatibleSdkPath();
-        if (sdkPath != null)
+        // Global tool (0.12.0) is incompatible with .NET 10+ MSBuild. Inject --msbuild-path
+        // pointing at the highest compatible SDK when falling back to the global tool.
+        if (exe == "roslynator")
         {
-            allArgs.Add("--msbuild-path");
-            allArgs.Add(sdkPath);
+            string? sdkPath = FindCompatibleSdkPath();
+            if (sdkPath != null)
+            {
+                allArgs.Add("--msbuild-path");
+                allArgs.Add(sdkPath);
+            }
         }
 
-        var psi = new ProcessStartInfo("roslynator")
+        var psi = new ProcessStartInfo(exe)
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -64,7 +121,7 @@ internal static class RoslynatorTools
         }
         catch (Exception ex)
         {
-            return $"Failed to start roslynator: {ex.Message}\nInstall with: dotnet tool install -g Roslynator.DotNet.Cli";
+            return $"Failed to start roslynator: {ex.Message}\nEnsure the project has been built so the local roslynator binary is present, or install globally with: dotnet tool install -g Roslynator.DotNet.Cli";
         }
 
         using (proc)
