@@ -12,9 +12,9 @@ public static class ListTools
     {
         var toolNames = typeof(LoadSolutionTool).Assembly
             .GetTypes()
-            .Where(t => t.GetCustomAttributes(typeof(McpServerToolTypeAttribute), false).Any())
+            .Where(t => t.GetCustomAttributes(typeof(McpServerToolTypeAttribute), false).Length > 0)
             .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.Static))
-            .Where(m => m.GetCustomAttributes(typeof(McpServerToolAttribute), false).Any())
+            .Where(m => m.GetCustomAttributes(typeof(McpServerToolAttribute), false).Length > 0)
             .Select(m => ToKebabCase(m.Name))
             .OrderBy(n => n)
             .ToArray();

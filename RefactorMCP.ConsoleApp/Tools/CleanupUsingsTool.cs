@@ -88,7 +88,7 @@ public static class CleanupUsingsTool
             .OfType<UsingDirectiveSyntax>()
             .ToList();
 
-        var newRoot = root.RemoveNodes(unused, SyntaxRemoveOptions.KeepNoTrivia);
+        SyntaxNode newRoot = root.RemoveNodes(unused, SyntaxRemoveOptions.KeepNoTrivia) ?? root;
         var formatted = Formatter.Format(newRoot, RefactoringHelpers.SharedWorkspace);
         return formatted.ToFullString();
     }

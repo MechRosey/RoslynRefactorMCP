@@ -38,27 +38,66 @@ internal static class RoslynatorTools
 
     private static async Task<string> RunRoslynatorAsync(IEnumerable<string> args)
     {
+        List<string> allArgs = new List<string>(args);
+
+        // Roslynator 0.12.0 is incompatible with .NET 10+ MSBuild (MSBuildConstants.InvalidPathChars removed).
+        // Inject --msbuild-path pointing at the highest compatible SDK (major version below 10).
+        string? sdkPath = FindCompatibleSdkPath();
+        if (sdkPath != null)
+        {
+            allArgs.Add("--msbuild-path");
+            allArgs.Add(sdkPath);
+        }
+
         var psi = new ProcessStartInfo("roslynator")
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
         };
-        foreach (string a in args) psi.ArgumentList.Add(a);
+        foreach (string a in allArgs) psi.ArgumentList.Add(a);
 
-        using Process proc = Process.Start(psi)
-            ?? throw new InvalidOperationException(
-                "roslynator not found. Install with: dotnet tool install -g Roslynator.DotNet.Cli");
+        Process proc;
+        try
+        {
+            proc = Process.Start(psi) ?? throw new InvalidOperationException("Process.Start returned null.");
+        }
+        catch (Exception ex)
+        {
+            return $"Failed to start roslynator: {ex.Message}\nInstall with: dotnet tool install -g Roslynator.DotNet.Cli";
+        }
 
-        Task<string> stdout = proc.StandardOutput.ReadToEndAsync();
-        Task<string> stderr = proc.StandardError.ReadToEndAsync();
-        await proc.WaitForExitAsync();
+        using (proc)
+        {
+            Task<string> stdout = proc.StandardOutput.ReadToEndAsync();
+            Task<string> stderr = proc.StandardError.ReadToEndAsync();
+            await proc.WaitForExitAsync();
 
-        StringBuilder sb = new();
-        string o = await stdout, e = await stderr;
-        if (!string.IsNullOrWhiteSpace(o)) sb.AppendLine(o);
-        if (!string.IsNullOrWhiteSpace(e)) sb.AppendLine(e);
-        if (proc.ExitCode != 0) sb.AppendLine($"Exit code: {proc.ExitCode}");
-        return sb.ToString().TrimEnd();
+            StringBuilder sb = new();
+            string o = await stdout, e = await stderr;
+            if (!string.IsNullOrWhiteSpace(o)) sb.AppendLine(o);
+            if (!string.IsNullOrWhiteSpace(e)) sb.AppendLine(e);
+            // Exit code 1 from analyze means diagnostics found, not a fatal error.
+            if (proc.ExitCode > 1) sb.AppendLine($"Exit code: {proc.ExitCode}");
+            return sb.ToString().TrimEnd();
+        }
     }
+
+    private static string? FindCompatibleSdkPath()
+    {
+        string dotnetRoot = Environment.GetEnvironmentVariable("DOTNET_ROOT")
+            ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "dotnet");
+        string sdksDir = Path.Combine(dotnetRoot, "sdk");
+        if (!Directory.Exists(sdksDir)) return null;
+
+        return Directory.GetDirectories(sdksDir)
+            .Select(d => (Path: d, Version: TryParseVersion(Path.GetFileName(d))))
+            .Where(x => x.Version != null && x.Version.Major < 10)
+            .OrderByDescending(x => x.Version)
+            .Select(x => x.Path)
+            .FirstOrDefault();
+    }
+
+    private static Version? TryParseVersion(string s) =>
+        Version.TryParse(s, out Version? v) ? v : null;
 }

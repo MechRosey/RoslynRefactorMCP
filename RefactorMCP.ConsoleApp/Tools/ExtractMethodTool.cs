@@ -41,7 +41,7 @@ public static class ExtractMethodTool
             .Where(n => span.Contains(n.Span))
             .ToList();
 
-        if (!selectedNodes.Any())
+        if (selectedNodes.Count == 0)
             throw new McpException("Error: No valid code selected");
 
         var containingMethod = selectedNodes.First().Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault();
@@ -91,7 +91,7 @@ public static class ExtractMethodTool
             .Where(n => span.Contains(n.Span))
             .ToList();
 
-        if (!selectedNodes.Any())
+        if (selectedNodes.Count == 0)
             throw new McpException("Error: No valid code selected");
 
         var containingMethod = selectedNodes.First().Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault();

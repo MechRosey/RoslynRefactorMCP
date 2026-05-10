@@ -46,7 +46,7 @@ internal class ConstructorInjectionRewriter : CSharpSyntaxRewriter
         {
             return SyntaxFactory.IdentifierName(_fieldName).WithTriviaFrom(node);
         }
-        return base.VisitIdentifierName(node);
+        return base.VisitIdentifierName(node)!;
     }
 
     public override SyntaxNode VisitInvocationExpression(InvocationExpressionSyntax node)

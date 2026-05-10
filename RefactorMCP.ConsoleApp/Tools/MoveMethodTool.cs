@@ -185,12 +185,12 @@ public static class MoveMethodTool
     {
         var targetCompilationUnit = targetRoot as CompilationUnitSyntax ?? throw new InvalidOperationException("Expected compilation unit");
         var targetUsingNames = targetCompilationUnit.Usings
-            .Select(u => u.Name.ToString())
+            .Select(u => u.Name!.ToString())
             .ToHashSet();
 
         var missingUsings = context.SourceUsings
-            .Where(u => !targetUsingNames.Contains(u.Name.ToString()))
-            .Where(u => context.Namespace == null || u.Name.ToString() != context.Namespace)
+            .Where(u => !targetUsingNames.Contains(u.Name!.ToString()))
+            .Where(u => context.Namespace == null || u.Name!.ToString() != context.Namespace)
             .ToArray();
 
         if (missingUsings.Length > 0)
@@ -487,7 +487,7 @@ public static class MoveMethodTool
                 var solution = document.Project.Solution.WithDocumentSyntaxRoot(currentDocument.Id, newSourceRoot);
 
                 var project = solution.GetProject(document.Project.Id);
-                var targetDocument = project.Documents.FirstOrDefault(d => d.FilePath == targetPath);
+                var targetDocument = project!.Documents.FirstOrDefault(d => d.FilePath == targetPath);
                 if (targetDocument == null)
                 {
                     var (targetText, targetEnc) = await RefactoringHelpers.ReadFileWithEncodingAsync(targetPath, cancellationToken);
