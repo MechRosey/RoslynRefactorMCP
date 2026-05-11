@@ -57,6 +57,9 @@ public static class LoadSolutionTool
         }
         catch (Exception ex)
         {
+            if (RefactoringHelpers.IsVs2026BuildHostFailure(ex.ToString()))
+                throw new McpException(
+                    RefactoringHelpers.Vs2026BuildHostFailureMessage($"Cannot load '{Path.GetFileName(solutionPath)}'"), ex);
             throw new McpException($"Error loading solution: {ex.Message}", ex);
         }
     }

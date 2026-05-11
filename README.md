@@ -17,12 +17,12 @@ The `roslynator-*` tools (analyze, fix, format, etc.) work with all SDK-style so
 
 For **classic .NET Framework solutions** (`.csproj` files using `ToolsVersion`, not the SDK format), loading requires Visual Studio 2022 or the VS 2022 Build Tools to be installed. The Roslynator CLI build host (`BuildHost-net472.exe`) independently discovers the installed Visual Studio instance at runtime.
 
-**Known limitation -- Visual Studio 2026 / MSBuild 18.x:** Roslynator CLI 5.3.0's `BuildHost-net472.exe` is ABI-incompatible with MSBuild 18.x (shipped with VS 2026). Attempting to load a .NET Framework solution on a machine where VS 2026 is the only or highest installed VS will produce a `TypeInitializationException (XMakeElements)` error. The fix is tracked upstream in the Roslyn repository; when Roslyn 5.4.0 ships:
+**Known limitation -- Visual Studio 2026 / MSBuild 18.x:** Roslynator CLI 5.3.0's `BuildHost-net472.exe` is ABI-incompatible with MSBuild 18.x (shipped with VS 2026). Any machine with VS 2026 installed will fail to load .NET Framework solutions with a `TypeInitializationException (XMakeElements)` error. The build host calls `MSBuildLocator.RegisterDefaults()` independently and always selects the highest installed VS, so installing VS 2022 Build Tools alongside VS 2026 does not help. There is no configuration workaround; the fix requires a newer Roslyn release.
+
+The fix is tracked upstream (dotnet/roslyn#82931, merged 2026-05-07); when Roslyn 5.4.0 ships:
 1. Bump `RoslynatorCliRoslynVersion` in `Roslynator/src/Directory.Build.props`
 2. Delete the cached binary at `RefactorMCP.ConsoleApp/bin/Debug/net9.0/roslynator/`
 3. Rebuild
-
-Workaround: install **VS 2022 Build Tools** (MSBuild 17.x) alongside VS 2026. The Roslynator tooling prefers VS installations with MSBuild < 18.0 when selecting the instance to pass to the build host.
 
 ## Usage
 

@@ -25,6 +25,23 @@ internal static class RefactoringHelpers
     internal static MemoryCache SyntaxTreeCache = new(new MemoryCacheOptions());
     internal static MemoryCache ModelCache = new(new MemoryCacheOptions());
 
+    // TypeInitializationException on XMakeElements is the signature of
+    // BuildHost-net472.exe failing to load MSBuild 18.x (VS 2026) assemblies.
+    // Roslyn 5.3.0's build host has binding redirects capped at MSBuild 15.1.0.0.
+    // Fix is merged in dotnet/roslyn#82931 but unreleased; expected in Roslyn 5.4.0.
+    private const string Vs2026Guidance =
+        "BuildHost-net472.exe (Roslyn 5.3.0) is incompatible with MSBuild 18.x (Visual Studio 2026). " +
+        "The build host calls MSBuildLocator.RegisterDefaults() independently and always picks the highest " +
+        "installed VS, so no configuration workaround is possible. " +
+        "Upstream fix merged in dotnet/roslyn#82931; expected in Roslyn 5.4.0 (~May 2026). " +
+        "Until then, .NET Framework solutions cannot be loaded on machines with VS 2026 installed.";
+
+    internal static bool IsVs2026BuildHostFailure(string text) =>
+        text.Contains("XMakeElements");
+
+    internal static string Vs2026BuildHostFailureMessage(string context) =>
+        $"{context}: {Vs2026Guidance}";
+
     internal static void ClearAllCaches()
     {
         SolutionCache.Dispose();
@@ -74,11 +91,19 @@ internal static class RefactoringHelpers
             Directory.SetCurrentDirectory(Path.GetDirectoryName(solutionPath)!);
             return cachedSolution!;
         }
-        using var workspace = CreateWorkspace();
-        var solution = await workspace.OpenSolutionAsync(solutionPath, progress: null, cancellationToken);
-        SolutionCache.Set(solutionPath, solution);
-        Directory.SetCurrentDirectory(Path.GetDirectoryName(solutionPath)!);
-        return solution;
+        try
+        {
+            using var workspace = CreateWorkspace();
+            var solution = await workspace.OpenSolutionAsync(solutionPath, progress: null, cancellationToken);
+            SolutionCache.Set(solutionPath, solution);
+            Directory.SetCurrentDirectory(Path.GetDirectoryName(solutionPath)!);
+            return solution;
+        }
+        catch (Exception ex) when (IsVs2026BuildHostFailure(ex.ToString()))
+        {
+            throw new McpException(
+                Vs2026BuildHostFailureMessage($"Cannot load '{Path.GetFileName(solutionPath)}'"), ex);
+        }
     }
 
     // Solutions are immutable, so replacing the cached instance is safe even

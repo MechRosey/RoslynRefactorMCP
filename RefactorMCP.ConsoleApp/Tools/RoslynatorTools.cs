@@ -152,6 +152,9 @@ internal static class RoslynatorTools
 
             StringBuilder sb = new();
             string o = await stdout, e = await stderr;
+            string combined = o + e;
+            if (RefactoringHelpers.IsVs2026BuildHostFailure(combined))
+                return RefactoringHelpers.Vs2026BuildHostFailureMessage("Cannot load .NET Framework solution");
             if (!string.IsNullOrWhiteSpace(o)) sb.AppendLine(o);
             if (!string.IsNullOrWhiteSpace(e)) sb.AppendLine(e);
             // Exit code 1 from analyze means diagnostics found, not a fatal error.
