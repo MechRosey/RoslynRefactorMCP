@@ -434,3 +434,5 @@ BuildHost-net472/
 BuildHost-netcore/ 
 TestOutput/codeMetricsCache.json
 .refactor-mcp/
+
+ContextLog.md

@@ -9,38 +9,44 @@ internal static class RoslynatorTools
     [McpServerTool(Name = "roslynator-analyze")]
     [Description("Run Roslynator diagnostics analysis on a solution or project.")]
     public static Task<string> Analyze(
-        [Description("Absolute path to .sln or .csproj.")] string solution)
-        => RunRoslynatorAsync(["analyze", solution]);
+        [Description("Absolute path to .sln or .csproj.")] string solution,
+        [Description("Path to MSBuild directory or MSBuild.exe. Required for .NET Framework solutions when auto-detection fails.")] string? msbuildPath = null)
+        => RunRoslynatorAsync(["analyze", solution], msbuildPath);
 
     [McpServerTool(Name = "roslynator-fix")]
     [Description("Apply Roslynator auto-fixes to a solution or project. Run roslynator-analyze first to see what will be fixed.")]
     public static Task<string> Fix(
-        [Description("Absolute path to .sln or .csproj.")] string solution)
-        => RunRoslynatorAsync(["fix", solution]);
+        [Description("Absolute path to .sln or .csproj.")] string solution,
+        [Description("Path to MSBuild directory or MSBuild.exe. Required for .NET Framework solutions when auto-detection fails.")] string? msbuildPath = null)
+        => RunRoslynatorAsync(["fix", solution], msbuildPath);
 
     [McpServerTool(Name = "roslynator-format")]
     [Description("Format code in a solution or project using Roslynator.")]
     public static Task<string> Format(
-        [Description("Absolute path to .sln or .csproj.")] string solution)
-        => RunRoslynatorAsync(["format", solution]);
+        [Description("Absolute path to .sln or .csproj.")] string solution,
+        [Description("Path to MSBuild directory or MSBuild.exe. Required for .NET Framework solutions when auto-detection fails.")] string? msbuildPath = null)
+        => RunRoslynatorAsync(["format", solution], msbuildPath);
 
     [McpServerTool(Name = "roslynator-spellcheck")]
     [Description("Check spelling of identifiers and comments in a solution or project via Roslynator.")]
     public static Task<string> Spellcheck(
-        [Description("Absolute path to .sln or .csproj.")] string solution)
-        => RunRoslynatorAsync(["spellcheck", solution]);
+        [Description("Absolute path to .sln or .csproj.")] string solution,
+        [Description("Path to MSBuild directory or MSBuild.exe. Required for .NET Framework solutions when auto-detection fails.")] string? msbuildPath = null)
+        => RunRoslynatorAsync(["spellcheck", solution], msbuildPath);
 
     [McpServerTool(Name = "roslynator-lloc")]
     [Description("Count logical lines of code in a solution or project via Roslynator.")]
     public static Task<string> Lloc(
-        [Description("Absolute path to .sln or .csproj.")] string solution)
-        => RunRoslynatorAsync(["lloc", solution]);
+        [Description("Absolute path to .sln or .csproj.")] string solution,
+        [Description("Path to MSBuild directory or MSBuild.exe. Required for .NET Framework solutions when auto-detection fails.")] string? msbuildPath = null)
+        => RunRoslynatorAsync(["lloc", solution], msbuildPath);
 
     [McpServerTool(Name = "roslynator-loc")]
     [Description("Count physical lines of code in a solution or project via Roslynator.")]
     public static Task<string> Loc(
-        [Description("Absolute path to .sln or .csproj.")] string solution)
-        => RunRoslynatorAsync(["loc", solution]);
+        [Description("Absolute path to .sln or .csproj.")] string solution,
+        [Description("Path to MSBuild directory or MSBuild.exe. Required for .NET Framework solutions when auto-detection fails.")] string? msbuildPath = null)
+        => RunRoslynatorAsync(["loc", solution], msbuildPath);
 
     [McpServerTool(Name = "roslynator-rename-symbol")]
     [Description("Rename symbols across a solution or project using Roslynator. " +
@@ -51,11 +57,12 @@ internal static class RoslynatorTools
         [Description("Absolute path to .sln or .csproj.")] string solution,
         [Description("C# expression selecting symbols to rename, e.g. symbol.Name.StartsWith(\"_\")")] string match,
         [Description("C# expression returning the new name, e.g. symbol.Name.TrimStart('_')")] string newName,
-        [Description("Preview only without writing changes. Defaults to true.")] bool dryRun = true)
+        [Description("Preview only without writing changes. Defaults to true.")] bool dryRun = true,
+        [Description("Path to MSBuild directory or MSBuild.exe. Required for .NET Framework solutions when auto-detection fails.")] string? msbuildPath = null)
     {
         List<string> args = ["rename-symbol", solution, "--match", match, "--new-name", newName];
         if (dryRun) args.Add("--dry-run");
-        return RunRoslynatorAsync(args);
+        return RunRoslynatorAsync(args, msbuildPath);
     }
 
     [McpServerTool(Name = "roslynator-find-symbol")]
@@ -67,13 +74,14 @@ internal static class RoslynatorTools
         [Description("Absolute path to .sln or .csproj.")] string solution,
         [Description("Find only symbols with zero references.")] bool unused = false,
         [Description("Space-separated symbol kinds to include, e.g. \"method field\".")] string? symbolKind = null,
-        [Description("Space-separated visibility levels to include, e.g. \"public internal\".")] string? visibility = null)
+        [Description("Space-separated visibility levels to include, e.g. \"public internal\".")] string? visibility = null,
+        [Description("Path to MSBuild directory or MSBuild.exe. Required for .NET Framework solutions when auto-detection fails.")] string? msbuildPath = null)
     {
         List<string> args = ["find-symbol", solution];
         if (unused) args.Add("--unused");
         if (!string.IsNullOrEmpty(symbolKind)) { args.Add("--symbol-kind"); args.Add(symbolKind); }
         if (!string.IsNullOrEmpty(visibility)) { args.Add("--visibility"); args.Add(visibility); }
-        return RunRoslynatorAsync(args);
+        return RunRoslynatorAsync(args, msbuildPath);
     }
 
     private static string GetRoslynatorExe()
@@ -89,21 +97,16 @@ internal static class RoslynatorTools
         return "roslynator";
     }
 
-    private static async Task<string> RunRoslynatorAsync(IEnumerable<string> args)
+    private static async Task<string> RunRoslynatorAsync(IEnumerable<string> args, string? msbuildPath = null)
     {
         string exe = GetRoslynatorExe();
         List<string> allArgs = new List<string>(args);
 
-        // Global tool (0.12.0) is incompatible with .NET 10+ MSBuild. Inject --msbuild-path
-        // pointing at the highest compatible SDK when falling back to the global tool.
-        if (exe == "roslynator")
+        string? resolvedMsbuildPath = msbuildPath ?? FindMsBuildPath();
+        if (resolvedMsbuildPath != null)
         {
-            string? sdkPath = FindCompatibleSdkPath();
-            if (sdkPath != null)
-            {
-                allArgs.Add("--msbuild-path");
-                allArgs.Add(sdkPath);
-            }
+            allArgs.Add("--msbuild-path");
+            allArgs.Add(resolvedMsbuildPath);
         }
 
         var psi = new ProcessStartInfo(exe)
@@ -140,8 +143,13 @@ internal static class RoslynatorTools
         }
     }
 
-    private static string? FindCompatibleSdkPath()
+    private static string? FindMsBuildPath()
     {
+        // Prefer Visual Studio MSBuild (needed for .NET Framework solutions)
+        string? vsPath = FindVsMsBuildPath();
+        if (vsPath != null) return vsPath;
+
+        // Fall back to highest .NET SDK < 10 (avoids XMakeElements init failure with .NET 10+)
         string dotnetRoot = Environment.GetEnvironmentVariable("DOTNET_ROOT")
             ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "dotnet");
         string sdksDir = Path.Combine(dotnetRoot, "sdk");
@@ -153,6 +161,42 @@ internal static class RoslynatorTools
             .OrderByDescending(x => x.Version)
             .Select(x => x.Path)
             .FirstOrDefault();
+    }
+
+    private static string? FindVsMsBuildPath()
+    {
+        if (!OperatingSystem.IsWindows()) return null;
+
+        string vswhere = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+            "Microsoft Visual Studio", "Installer", "vswhere.exe");
+
+        if (!File.Exists(vswhere)) return null;
+
+        try
+        {
+            var psi = new ProcessStartInfo(vswhere)
+            {
+                RedirectStandardOutput = true,
+                UseShellExecute = false,
+            };
+            psi.ArgumentList.Add("-latest");
+            psi.ArgumentList.Add("-requires");
+            psi.ArgumentList.Add("Microsoft.Component.MSBuild");
+            psi.ArgumentList.Add("-find");
+            psi.ArgumentList.Add(@"MSBuild\**\Bin\MSBuild.exe");
+
+            using Process? proc = Process.Start(psi);
+            if (proc == null) return null;
+            string output = proc.StandardOutput.ReadToEnd().Trim();
+            proc.WaitForExit();
+            string? msbuildExe = output.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.Length > 0);
+            return msbuildExe != null ? Path.GetDirectoryName(msbuildExe) : null;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static Version? TryParseVersion(string s) =>
