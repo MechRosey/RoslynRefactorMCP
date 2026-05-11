@@ -102,11 +102,17 @@ internal static class RoslynatorTools
         string exe = GetRoslynatorExe();
         List<string> allArgs = new List<string>(args);
 
-        string? resolvedMsbuildPath = msbuildPath ?? FindMsBuildPath();
-        if (resolvedMsbuildPath != null)
+        // vswhere gives us the full MSBuild.exe path; --msbuild-path wants the containing directory.
+        string? vsMsbuildExe = FindVsMsBuildExe();
+
+        string? resolvedMsbuildDir = msbuildPath
+            ?? (vsMsbuildExe != null ? Path.GetDirectoryName(vsMsbuildExe) : null)
+            ?? FindSdkMsBuildPath();
+
+        if (resolvedMsbuildDir != null)
         {
             allArgs.Add("--msbuild-path");
-            allArgs.Add(resolvedMsbuildPath);
+            allArgs.Add(resolvedMsbuildDir);
         }
 
         var psi = new ProcessStartInfo(exe)
@@ -115,6 +121,13 @@ internal static class RoslynatorTools
             RedirectStandardError = true,
             UseShellExecute = false,
         };
+
+        // MSBUILD_EXE_PATH propagates into the MSBuildWorkspace build host subprocess that Roslynator
+        // spawns for project loading. --msbuild-path only registers MSBuild in the main process.
+        string? msbuildExeForEnv = vsMsbuildExe ?? ResolveAsMsBuildExe(msbuildPath);
+        if (msbuildExeForEnv != null)
+            psi.Environment["MSBUILD_EXE_PATH"] = msbuildExeForEnv;
+
         foreach (string a in allArgs) psi.ArgumentList.Add(a);
 
         Process proc;
@@ -143,13 +156,8 @@ internal static class RoslynatorTools
         }
     }
 
-    private static string? FindMsBuildPath()
+    private static string? FindSdkMsBuildPath()
     {
-        // Prefer Visual Studio MSBuild (needed for .NET Framework solutions)
-        string? vsPath = FindVsMsBuildPath();
-        if (vsPath != null) return vsPath;
-
-        // Fall back to highest .NET SDK < 10 (avoids XMakeElements init failure with .NET 10+)
         string dotnetRoot = Environment.GetEnvironmentVariable("DOTNET_ROOT")
             ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "dotnet");
         string sdksDir = Path.Combine(dotnetRoot, "sdk");
@@ -163,7 +171,8 @@ internal static class RoslynatorTools
             .FirstOrDefault();
     }
 
-    private static string? FindVsMsBuildPath()
+    // Returns the full path to MSBuild.exe from the latest VS install via vswhere.
+    private static string? FindVsMsBuildExe()
     {
         if (!OperatingSystem.IsWindows()) return null;
 
@@ -190,13 +199,22 @@ internal static class RoslynatorTools
             if (proc == null) return null;
             string output = proc.StandardOutput.ReadToEnd().Trim();
             proc.WaitForExit();
-            string? msbuildExe = output.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.Length > 0);
-            return msbuildExe != null ? Path.GetDirectoryName(msbuildExe) : null;
+            return output.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.Length > 0);
         }
         catch
         {
             return null;
         }
+    }
+
+    // Resolves a user-supplied path (directory or .exe) to the MSBuild.exe path for MSBUILD_EXE_PATH.
+    private static string? ResolveAsMsBuildExe(string? path)
+    {
+        if (path == null) return null;
+        if (path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            return File.Exists(path) ? path : null;
+        string candidate = Path.Combine(path, "MSBuild.exe");
+        return File.Exists(candidate) ? candidate : null;
     }
 
     private static Version? TryParseVersion(string s) =>
