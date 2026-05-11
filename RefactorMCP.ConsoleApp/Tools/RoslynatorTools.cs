@@ -123,9 +123,11 @@ internal static class RoslynatorTools
             UseShellExecute = false,
         };
 
-        // MSBUILD_EXE_PATH propagates VS MSBuild into the MSBuildWorkspace build host subprocess.
-        // The build host starts fresh and does its own MSBuild discovery; --msbuild-path only affects
-        // the Roslynator main process and cannot reach the build host.
+        // NOTE: In Roslyn 5.3.0, BuildHost-net472.exe does its own MSBuild discovery via
+        // MSBuildLocator.RegisterDefaults() and ignores both MSBUILD_EXE_PATH and --msbuild-path.
+        // This means .NET Framework solutions always get whichever VS is registered in the registry,
+        // regardless of what we pass here. MSBUILD_EXE_PATH is kept for forward-compatibility in case
+        // a future Roslyn build host version respects it. Fix awaits Roslyn 5.4.0+.
         string? msbuildExeForEnv = vsMsbuildExe ?? ResolveAsMsBuildExe(msbuildPath);
         if (msbuildExeForEnv != null)
             psi.Environment["MSBUILD_EXE_PATH"] = msbuildExeForEnv;
@@ -173,7 +175,10 @@ internal static class RoslynatorTools
             .FirstOrDefault();
     }
 
-    // Returns the full path to MSBuild.exe from the latest VS install via vswhere.
+    // Returns the full path to MSBuild.exe from a compatible VS install via vswhere.
+    // Roslyn 5.3.0 BuildHost-net472 is ABI-incompatible with MSBuild 18.x (VS 2026+), so
+    // we prefer VS < 18.0. When RoslynatorCliRoslynVersion is bumped to a release that
+    // supports MSBuild 18.x, raise or remove the version ceiling here.
     private static string? FindVsMsBuildExe()
     {
         if (!OperatingSystem.IsWindows()) return null;
@@ -184,6 +189,13 @@ internal static class RoslynatorTools
 
         if (!File.Exists(vswhere)) return null;
 
+        // -products * is required to include Build Tools installations (not just full IDE installs).
+        return InvokeVswhere(vswhere, ["-latest", "-products", "*", "-version", "[15.0,18.0)", "-requires", "Microsoft.Component.MSBuild", "-find", @"MSBuild\**\Bin\MSBuild.exe"])
+            ?? InvokeVswhere(vswhere, ["-latest", "-products", "*", "-requires", "Microsoft.Component.MSBuild", "-find", @"MSBuild\**\Bin\MSBuild.exe"]);
+    }
+
+    private static string? InvokeVswhere(string vswhere, IEnumerable<string> args)
+    {
         try
         {
             var psi = new ProcessStartInfo(vswhere)
@@ -191,12 +203,7 @@ internal static class RoslynatorTools
                 RedirectStandardOutput = true,
                 UseShellExecute = false,
             };
-            psi.ArgumentList.Add("-latest");
-            psi.ArgumentList.Add("-requires");
-            psi.ArgumentList.Add("Microsoft.Component.MSBuild");
-            psi.ArgumentList.Add("-find");
-            psi.ArgumentList.Add(@"MSBuild\**\Bin\MSBuild.exe");
-
+            foreach (string a in args) psi.ArgumentList.Add(a);
             using Process? proc = Process.Start(psi);
             if (proc == null) return null;
             string output = proc.StandardOutput.ReadToEnd().Trim();

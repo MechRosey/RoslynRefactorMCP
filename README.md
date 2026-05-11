@@ -2,6 +2,28 @@
 
 RefactorMCP is a Model Context Protocol server that exposes Roslyn-based refactoring tools for C#.
 
+## Prerequisites
+
+- **.NET 9.0 SDK or later** -- required to build and run the server.
+- **Git submodules** -- the Roslynator CLI is included as a submodule. After cloning, run:
+  ```bash
+  git submodule update --init
+  ```
+  The submodule is built and published automatically during the first `dotnet build`. The binary is cached in the output directory; subsequent builds skip the publish step.
+
+### Roslynator tooling and .NET Framework solutions
+
+The `roslynator-*` tools (analyze, fix, format, etc.) work with all SDK-style solutions out of the box.
+
+For **classic .NET Framework solutions** (`.csproj` files using `ToolsVersion`, not the SDK format), loading requires Visual Studio 2022 or the VS 2022 Build Tools to be installed. The Roslynator CLI build host (`BuildHost-net472.exe`) independently discovers the installed Visual Studio instance at runtime.
+
+**Known limitation -- Visual Studio 2026 / MSBuild 18.x:** Roslynator CLI 5.3.0's `BuildHost-net472.exe` is ABI-incompatible with MSBuild 18.x (shipped with VS 2026). Attempting to load a .NET Framework solution on a machine where VS 2026 is the only or highest installed VS will produce a `TypeInitializationException (XMakeElements)` error. The fix is tracked upstream in the Roslyn repository; when Roslyn 5.4.0 ships:
+1. Bump `RoslynatorCliRoslynVersion` in `Roslynator/src/Directory.Build.props`
+2. Delete the cached binary at `RefactorMCP.ConsoleApp/bin/Debug/net9.0/roslynator/`
+3. Rebuild
+
+Workaround: install **VS 2022 Build Tools** (MSBuild 17.x) alongside VS 2026. The Roslynator tooling prefers VS installations with MSBuild < 18.0 when selecting the instance to pass to the build host.
+
 ## Usage
 
 Run the console application directly or host it as an MCP server:
