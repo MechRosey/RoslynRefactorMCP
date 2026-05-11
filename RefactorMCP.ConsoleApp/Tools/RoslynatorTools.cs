@@ -102,13 +102,14 @@ internal static class RoslynatorTools
         string exe = GetRoslynatorExe();
         List<string> allArgs = new List<string>(args);
 
-        // vswhere gives us the full MSBuild.exe path; --msbuild-path wants the containing directory.
         string? vsMsbuildExe = FindVsMsBuildExe();
 
-        string? resolvedMsbuildDir = msbuildPath
-            ?? (vsMsbuildExe != null ? Path.GetDirectoryName(vsMsbuildExe) : null)
-            ?? FindSdkMsBuildPath();
-
+        // VS MSBuild (net472 assemblies) must NOT be passed as --msbuild-path to the net9.0 Roslynator
+        // process. RegisterMSBuildPath would load Framework assemblies into a .NET runtime, triggering
+        // XMakeElements TypeInitializationException. Let Roslynator's own TryGetVisualStudioInstance
+        // handle VS discovery in the main process. Only inject --msbuild-path as a fallback when VS is
+        // absent, or when the caller supplies an explicit override.
+        string? resolvedMsbuildDir = msbuildPath ?? (vsMsbuildExe == null ? FindSdkMsBuildPath() : null);
         if (resolvedMsbuildDir != null)
         {
             allArgs.Add("--msbuild-path");
@@ -122,8 +123,9 @@ internal static class RoslynatorTools
             UseShellExecute = false,
         };
 
-        // MSBUILD_EXE_PATH propagates into the MSBuildWorkspace build host subprocess that Roslynator
-        // spawns for project loading. --msbuild-path only registers MSBuild in the main process.
+        // MSBUILD_EXE_PATH propagates VS MSBuild into the MSBuildWorkspace build host subprocess.
+        // The build host starts fresh and does its own MSBuild discovery; --msbuild-path only affects
+        // the Roslynator main process and cannot reach the build host.
         string? msbuildExeForEnv = vsMsbuildExe ?? ResolveAsMsBuildExe(msbuildPath);
         if (msbuildExeForEnv != null)
             psi.Environment["MSBUILD_EXE_PATH"] = msbuildExeForEnv;
