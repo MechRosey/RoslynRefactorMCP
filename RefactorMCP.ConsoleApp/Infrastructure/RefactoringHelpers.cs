@@ -25,16 +25,15 @@ internal static class RefactoringHelpers
     internal static MemoryCache SyntaxTreeCache = new(new MemoryCacheOptions());
     internal static MemoryCache ModelCache = new(new MemoryCacheOptions());
 
-    // TypeInitializationException on XMakeElements is the signature of
-    // BuildHost-net472.exe failing to load MSBuild 18.x (VS 2026) assemblies.
-    // Roslyn 5.3.0's build host has binding redirects capped at MSBuild 15.1.0.0.
-    // Fix is merged in dotnet/roslyn#82931 but unreleased; expected in Roslyn 5.4.0.
+    // TypeInitializationException on XMakeElements is the signature of the net472 build host
+    // failing to load MSBuild 18.x (VS 2026) assemblies. Older build hosts had binding redirects
+    // capped at MSBuild 15.1.0.0. The upstream fix (dotnet/roslyn#82931) ships in Roslyn 5.6.0,
+    // which this project now references, so a clean install should not hit this. Retained as a
+    // safety net: if it still appears, a stale cached build host binary predating the fix is in use.
     private const string Vs2026Guidance =
-        "BuildHost-net472.exe (Roslyn 5.3.0) is incompatible with MSBuild 18.x (Visual Studio 2026). " +
-        "The build host calls MSBuildLocator.RegisterDefaults() independently and always picks the highest " +
-        "installed VS, so no configuration workaround is possible. " +
-        "Upstream fix merged in dotnet/roslyn#82931; expected in Roslyn 5.4.0 (~May 2026). " +
-        "Until then, .NET Framework solutions cannot be loaded on machines with VS 2026 installed.";
+        "The MSBuild build host failed to load MSBuild 18.x (Visual Studio 2026) assemblies. " +
+        "The upstream fix (dotnet/roslyn#82931) is included in Roslyn 5.6.0, which this tool references. " +
+        "If this persists, force a clean rebuild so the current build host binary is used.";
 
     internal static bool IsVs2026BuildHostFailure(string text) =>
         text.Contains("XMakeElements");
@@ -66,9 +65,77 @@ internal static class RefactoringHelpers
         lock (_msbuildLock)
         {
             if (_msbuildRegistered) return;
-            MSBuildLocator.RegisterDefaults();
+            RegisterMsBuild();
             _msbuildRegistered = true;
         }
+    }
+
+    // RegisterDefaults() only auto-selects an MSBuild it recognises. On machines whose only
+    // toolset is a VS / .NET SDK newer than the installed MSBuildLocator knows about, it throws
+    // "No instances of MSBuild could be detected". We keep RegisterDefaults() as the primary path
+    // (unchanged behaviour where it works) and fall back to explicit discovery only when it fails,
+    // so the change is inert for consumers on a conventional install.
+    private static void RegisterMsBuild()
+    {
+        if (MSBuildLocator.IsRegistered) return;
+
+        try
+        {
+            MSBuildLocator.RegisterDefaults();
+            return;
+        }
+        catch (InvalidOperationException)
+        {
+            // No default instance; fall through to explicit discovery.
+        }
+
+        // Consumer opt-in override (never a committed path).
+        string? envMsBuild = Environment.GetEnvironmentVariable("MSBUILD_EXE_PATH");
+        if (!string.IsNullOrWhiteSpace(envMsBuild) && File.Exists(envMsBuild))
+        {
+            MSBuildLocator.RegisterMSBuildPath(Path.GetDirectoryName(envMsBuild)!);
+            return;
+        }
+
+        VisualStudioInstance? instance = MSBuildLocator.QueryVisualStudioInstances()
+            .OrderByDescending(i => i.Version)
+            .FirstOrDefault();
+        if (instance != null)
+        {
+            MSBuildLocator.RegisterInstance(instance);
+            return;
+        }
+
+        string? sdkPath = FindLatestSdkPath();
+        if (sdkPath != null)
+        {
+            MSBuildLocator.RegisterMSBuildPath(sdkPath);
+            return;
+        }
+
+        // Nothing discoverable: surface the canonical error.
+        MSBuildLocator.RegisterDefaults();
+    }
+
+    private static string? FindLatestSdkPath()
+    {
+        string dotnetRoot = Environment.GetEnvironmentVariable("DOTNET_ROOT")
+            ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "dotnet");
+        string sdksDir = Path.Combine(dotnetRoot, "sdk");
+        if (!Directory.Exists(sdksDir)) return null;
+
+        return Directory.GetDirectories(sdksDir)
+            .Select(d => new { Path = d, Version = ParseSdkVersion(Path.GetFileName(d)) })
+            .Where(x => x.Version != null)
+            .OrderByDescending(x => x.Version)
+            .Select(x => x.Path)
+            .FirstOrDefault();
+    }
+
+    private static Version? ParseSdkVersion(string folderName)
+    {
+        string core = folderName.Split('-')[0];
+        return Version.TryParse(core, out Version? version) ? version : null;
     }
 
     internal static MSBuildWorkspace CreateWorkspace()

@@ -123,11 +123,10 @@ internal static class RoslynatorTools
             UseShellExecute = false,
         };
 
-        // NOTE: In Roslyn 5.3.0, BuildHost-net472.exe does its own MSBuild discovery via
-        // MSBuildLocator.RegisterDefaults() and ignores both MSBUILD_EXE_PATH and --msbuild-path.
-        // This means .NET Framework solutions always get whichever VS is registered in the registry,
-        // regardless of what we pass here. MSBUILD_EXE_PATH is kept for forward-compatibility in case
-        // a future Roslyn build host version respects it. Fix awaits Roslyn 5.4.0+.
+        // NOTE: The net472 build host does its own MSBuild discovery via MSBuildLocator.RegisterDefaults()
+        // and ignores both MSBUILD_EXE_PATH and --msbuild-path, so .NET Framework solutions always get
+        // whichever VS is registered, regardless of what we pass here. MSBUILD_EXE_PATH is kept as a hint.
+        // The MSBuild 18.x (VS 2026) load fix ships in Roslyn 5.6.0 (RoslynatorCliRoslynVersion).
         string? msbuildExeForEnv = vsMsbuildExe ?? ResolveAsMsBuildExe(msbuildPath);
         if (msbuildExeForEnv != null)
             psi.Environment["MSBUILD_EXE_PATH"] = msbuildExeForEnv;
@@ -179,9 +178,9 @@ internal static class RoslynatorTools
     }
 
     // Returns the full path to MSBuild.exe from a compatible VS install via vswhere.
-    // Roslyn 5.3.0 BuildHost-net472 is ABI-incompatible with MSBuild 18.x (VS 2026+), so
-    // we prefer VS < 18.0. When RoslynatorCliRoslynVersion is bumped to a release that
-    // supports MSBuild 18.x, raise or remove the version ceiling here.
+    // Historically the net472 build host was ABI-incompatible with MSBuild 18.x (VS 2026+), so we
+    // prefer VS < 18.0. RoslynatorCliRoslynVersion is now 5.6.0 (supports MSBuild 18.x), so this
+    // ceiling could be raised or removed once the VS 18.x CLI path is verified end-to-end.
     private static string? FindVsMsBuildExe()
     {
         if (!OperatingSystem.IsWindows()) return null;
